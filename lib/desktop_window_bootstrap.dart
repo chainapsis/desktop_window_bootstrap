@@ -100,7 +100,7 @@ class _DesktopWindowTitlebarSafeAreaState extends State<DesktopWindowTitlebarSaf
     if (!widget.isEnabled) return;
     final inset = await DesktopWindowBootstrap.getTitlebarInset();
     if (!mounted || !widget.isEnabled || requestId != _refreshRequestId) return;
-    final normalizedInset = inset >= 0 ? inset : 0;
+    final normalizedInset = inset >= 0 ? inset : 0.0;
     if (normalizedInset == _titlebarInset) return;
     setState(() => _titlebarInset = normalizedInset);
   }
