@@ -4,6 +4,7 @@ import FlutterMacOS
 public enum DesktopWindowBootstrapMacOS {
   private static weak var mainWindow: NSWindow?
   private static var fullscreenObservers: [NSObjectProtocol] = []
+  private static var cachedWindowedTitlebarInset: Double = 0
 
   @discardableResult
   public static func start(mainFlutterWindow: NSWindow) -> DesktopWindowBootstrapViewController {
@@ -28,7 +29,16 @@ public enum DesktopWindowBootstrapMacOS {
 
     let windowFrameHeight = window.contentView?.frame.height ?? 0
     let contentLayoutRectHeight = window.contentLayoutRect.height
-    return max(0, windowFrameHeight - contentLayoutRectHeight)
+    let inset = max(0, windowFrameHeight - contentLayoutRectHeight)
+
+    if window.styleMask.contains(.fullScreen) {
+      return 0
+    }
+    if inset > 0 {
+      cachedWindowedTitlebarInset = inset
+      return inset
+    }
+    return cachedWindowedTitlebarInset
   }
 
   private static func configureWindowShell(_ window: NSWindow) {
