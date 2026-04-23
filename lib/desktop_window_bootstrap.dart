@@ -66,6 +66,7 @@ class DesktopWindowTitlebarSafeArea extends StatefulWidget {
 class _DesktopWindowTitlebarSafeAreaState extends State<DesktopWindowTitlebarSafeArea>
     with WidgetsBindingObserver {
   late double _titlebarInset;
+  int _refreshRequestId = 0;
 
   @override
   void initState() {
@@ -95,10 +96,13 @@ class _DesktopWindowTitlebarSafeAreaState extends State<DesktopWindowTitlebarSaf
   }
 
   Future<void> _refreshInset() async {
+    final requestId = ++_refreshRequestId;
     if (!widget.isEnabled) return;
     final inset = await DesktopWindowBootstrap.getTitlebarInset();
-    if (!mounted || inset == _titlebarInset) return;
-    setState(() => _titlebarInset = inset >= 0 ? inset : 0);
+    if (!mounted || !widget.isEnabled || requestId != _refreshRequestId) return;
+    final normalizedInset = inset >= 0 ? inset : 0;
+    if (normalizedInset == _titlebarInset) return;
+    setState(() => _titlebarInset = normalizedInset);
   }
 
   @override
