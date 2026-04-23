@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io' show Platform;
 
 import 'package:flutter/foundation.dart';
@@ -65,8 +66,11 @@ class DesktopWindowTitlebarSafeArea extends StatefulWidget {
 
 class _DesktopWindowTitlebarSafeAreaState extends State<DesktopWindowTitlebarSafeArea>
     with WidgetsBindingObserver {
+  static const _metricsRefreshDebounce = Duration(milliseconds: 75);
+
   late double _titlebarInset;
   int _refreshRequestId = 0;
+  Timer? _refreshDebounce;
 
   @override
   void initState() {
@@ -81,16 +85,21 @@ class _DesktopWindowTitlebarSafeAreaState extends State<DesktopWindowTitlebarSaf
     super.didUpdateWidget(oldWidget);
     if (oldWidget.isEnabled != widget.isEnabled && widget.isEnabled) {
       _refreshInset();
+    } else if (oldWidget.isEnabled && !widget.isEnabled) {
+      _refreshDebounce?.cancel();
     }
   }
 
   @override
   void didChangeMetrics() {
-    _refreshInset();
+    if (!widget.isEnabled) return;
+    _refreshDebounce?.cancel();
+    _refreshDebounce = Timer(_metricsRefreshDebounce, _refreshInset);
   }
 
   @override
   void dispose() {
+    _refreshDebounce?.cancel();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
   }
