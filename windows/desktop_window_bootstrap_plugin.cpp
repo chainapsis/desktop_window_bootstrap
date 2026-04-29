@@ -46,10 +46,22 @@ typedef BOOL(WINAPI* SetWindowCompositionAttributeFn)(
 #define DWMWA_SYSTEMBACKDROP_TYPE 38
 #endif
 
-// DWM_SYSTEMBACKDROP_TYPE values:
-//   1 = Auto, 2 = DWMSBT_MAINWINDOW (mica),
-//   3 = DWMSBT_TRANSIENTWINDOW (acrylic), 4 = DWMSBT_TABBEDWINDOW.
-constexpr INT kDwmsbtTransientWindow = 3;
+// DWM_SYSTEMBACKDROP_TYPE values
+// (https://learn.microsoft.com/windows/win32/api/dwmapi/ne-dwmapi-dwm_systembackdrop_type):
+//   0 = DWMSBT_AUTO,            1 = DWMSBT_NONE,
+//   2 = DWMSBT_MAINWINDOW       (Mica - long-lived main window),
+//   3 = DWMSBT_TRANSIENTWINDOW  (Desktop Acrylic, brightest variant),
+//   4 = DWMSBT_TABBEDWINDOW     (Mica Alt - tabbed title bar).
+//
+// Use Mica for our long-lived main window: it matches every first-party Win11
+// app (Settings, File Explorer, Calculator, Notepad, Photos, Microsoft Store).
+// Microsoft explicitly prohibits acrylic on app backgrounds:
+//   "Don't put desktop acrylic on large background surfaces of your app."
+//   https://learn.microsoft.com/windows/apps/design/style/acrylic
+// Acrylic is reserved for transient surfaces (Start menu, flyouts, context
+// menus); applying it to the root window is off-spec and looks heavier than
+// every other Win11 app.
+constexpr INT kDwmsbtMainWindow = 2;
 
 // IsWindows*OrGreater can lie under app-compat shims unless we ship a manifest
 // pinning the supported OS versions. RtlGetVersion always returns the real
@@ -99,7 +111,7 @@ HWND DesktopWindowBootstrapPlugin::GetParentWindow() const {
   return ::GetAncestor(registrar_->GetView()->GetNativeWindow(), GA_ROOT);
 }
 
-void DesktopWindowBootstrapPlugin::ApplyDefaultAcrylic() const {
+void DesktopWindowBootstrapPlugin::ApplySystemBackdrop() const {
   const HWND hwnd = GetParentWindow();
   if (!hwnd) {
     return;
@@ -112,11 +124,13 @@ void DesktopWindowBootstrapPlugin::ApplyDefaultAcrylic() const {
   MARGINS margins = {-1, -1, -1, -1};
   ::DwmExtendFrameIntoClientArea(hwnd, &margins);
 
-  // (2) Win11 22H2+ : DWMWA_SYSTEMBACKDROP_TYPE is the documented path. DWM
-  //     handles theme transitions, multi-monitor moves, and RDP reconnects
-  //     internally. If this call succeeds we skip the legacy fallback.
+  // (2) Win11 22H2+ : DWMWA_SYSTEMBACKDROP_TYPE with DWMSBT_MAINWINDOW
+  //     applies Mica - the same material every first-party Win11 app uses
+  //     for its main window. DWM handles theme transitions, multi-monitor
+  //     moves, RDP reconnects, and the EnableTransparency / battery-saver /
+  //     high-contrast / low-end-hardware fallbacks internally.
   if (GetWindowsBuildNumber() >= 22523) {
-    INT backdrop_type = kDwmsbtTransientWindow;
+    INT backdrop_type = kDwmsbtMainWindow;
     HRESULT hr = ::DwmSetWindowAttribute(
         hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
         &backdrop_type, sizeof(backdrop_type));
@@ -126,9 +140,12 @@ void DesktopWindowBootstrapPlugin::ApplyDefaultAcrylic() const {
     // Fall through to the legacy path on driver-level failures.
   }
 
-  // (3) Win10 / pre-22523 Win11 : SetWindowCompositionAttribute is the only
-  //     way to get acrylic. The symbol is not exported by user32's import
-  //     library, so it must be resolved via GetProcAddress.
+  // (3) Win10 / pre-22523 Win11 : DWMWA_MICA_EFFECT (1029) is undocumented
+  //     and was only present on a narrow band of pre-RTM Insider builds, so
+  //     we don't try it. SetWindowCompositionAttribute with acrylic-blur is
+  //     the best translucent material available on these systems. The symbol
+  //     is not exported by user32's import library, so it must be resolved
+  //     via GetProcAddress.
   const auto user32 = ::GetModuleHandleA("user32.dll");
   if (!user32) {
     return;
@@ -159,7 +176,7 @@ void DesktopWindowBootstrapPlugin::HandleMethodCall(
     const flutter::MethodCall<flutter::EncodableValue>& method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   if (method_call.method_name() == "initialize") {
-    ApplyDefaultAcrylic();
+    ApplySystemBackdrop();
     result->Success(flutter::EncodableValue(true));
   } else if (method_call.method_name() == "getTitlebarInset") {
     result->Success(flutter::EncodableValue(0.0));

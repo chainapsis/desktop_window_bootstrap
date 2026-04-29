@@ -29,7 +29,7 @@ class DesktopWindowBootstrapPlugin : public flutter::Plugin {
 
  private:
   HWND GetParentWindow() const;
-  void ApplyDefaultAcrylic() const;
+  void ApplySystemBackdrop() const;
 
   flutter::PluginRegistrarWindows* registrar_;
 };
