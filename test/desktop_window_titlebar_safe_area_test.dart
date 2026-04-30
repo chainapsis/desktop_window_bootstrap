@@ -10,8 +10,8 @@ const _channel = MethodChannel('desktop_window_bootstrap/methods');
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
-  tearDown(() async {
-    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+  tearDown(() {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, null);
   });
 
@@ -23,7 +23,7 @@ void main() {
       }
 
       var getTitlebarInsetCallCount = 0;
-      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
           .setMockMethodCallHandler(_channel, (call) {
             if (call.method != 'getTitlebarInset') {
               return null;
@@ -39,7 +39,7 @@ void main() {
                 const Duration(milliseconds: 10),
                 () => 20,
               ),
-              _ => 20,
+              _ => Future<Object?>.value(20),
             };
           });
 
@@ -72,6 +72,18 @@ void main() {
       expect(_topPadding(tester), 20);
     },
     skip: !Platform.isMacOS,
+  );
+
+  test(
+    'computes macOS windowed content size from the default titlebar inset',
+    () {
+      expect(
+        DesktopWindowBootstrap.macOSWindowedContentSizeFor(
+          const Size(1080, 720),
+        ),
+        const Size(1080, 688),
+      );
+    },
   );
 }
 
