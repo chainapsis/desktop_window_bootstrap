@@ -17,22 +17,6 @@ public final class DesktopWindowBootstrapPlugin: NSObject, FlutterPlugin {
       result(true)
     case "getTitlebarInset":
       result(DesktopWindowBootstrapMacOS.titlebarInset())
-    case "applyMacOSDesignWindowLayout":
-      guard let arguments = call.arguments as? [String: Any] else {
-        result(
-          FlutterError(
-            code: "bad_args",
-            message: "Expected layout arguments.",
-            details: nil
-          )
-        )
-        return
-      }
-      result(DesktopWindowBootstrapMacOS.applyMacOSDesignWindowLayout(arguments))
-    case "getContentSize":
-      let arguments = call.arguments as? [String: Any] ?? [:]
-      let fallback = (arguments["titlebarInset"] as? NSNumber)?.doubleValue ?? 32
-      result(DesktopWindowBootstrapMacOS.contentSize(titlebarInsetFallback: fallback))
     default:
       result(FlutterMethodNotImplemented)
     }

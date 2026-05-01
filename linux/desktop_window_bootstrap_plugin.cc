@@ -60,14 +60,6 @@ static void desktop_window_bootstrap_plugin_handle_method_call(
   } else if (strcmp(method, "getTitlebarInset") == 0) {
     g_autoptr(FlValue) result = fl_value_new_float(0.0);
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
-  } else if (strcmp(method, "applyMacOSDesignWindowLayout") == 0) {
-    g_autoptr(FlValue) result = fl_value_new_bool(TRUE);
-    response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
-  } else if (strcmp(method, "getContentSize") == 0) {
-    g_autoptr(FlValue) result = fl_value_new_map();
-    fl_value_set_string_take(result, "width", fl_value_new_float(0.0));
-    fl_value_set_string_take(result, "height", fl_value_new_float(0.0));
-    response = FL_METHOD_RESPONSE(fl_method_success_response_new(result));
   } else {
     response = FL_METHOD_RESPONSE(fl_method_not_implemented_response_new());
   }

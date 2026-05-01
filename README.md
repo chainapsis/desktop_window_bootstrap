@@ -1,37 +1,15 @@
 # desktop_window_bootstrap
 
-Minimal desktop window bootstrap helpers for Flutter desktop apps.
+A new Flutter plugin project.
 
-## macOS Design Window Layout
+## Getting Started
 
-This package treats the macOS full-size-content window as the design source of
-truth. In the default shell, a macOS window sized to `1080 x 720` has a
-`32 dp` overlapping titlebar safe area, so the usable Flutter app body is
-`1080 x 688`.
+This project is a starting point for a Flutter
+[plug-in package](https://flutter.dev/to/develop-plugins),
+a specialized package that includes platform-specific implementation code for
+Android and/or iOS.
 
-Windows does not overlap Flutter content with its native titlebar. When
-`applyMacOSDesignWindowLayout` receives a macOS design window size, the Windows
-implementation subtracts the macOS titlebar inset from the requested height and
-targets that result as the Win32 client rect. It then expands the outer HWND by
-the current native frame/titlebar thickness for the active DPI.
+For help getting started with Flutter development, view the
+[online documentation](https://docs.flutter.dev), which offers tutorials,
+samples, guidance on mobile development, and a full API reference.
 
-```dart
-await DesktopWindowBootstrap.applyMacOSDesignWindowLayout(
-  size: const Size(1080, 720),
-  minimumSize: const Size(1080, 720),
-  enforceAspectRatio: true,
-  center: true,
-);
-```
-
-On Windows, the example above targets:
-
-```text
-client/content:     1080 x 688
-8 dp shell gap:     1064 x 672
-content ratio:      1080 / 688
-```
-
-The default titlebar inset is
-`DesktopWindowBootstrap.defaultMacOSWindowedTitlebarInset`, currently `32`.
-Pass `titlebarInset` to override it for a different macOS shell.

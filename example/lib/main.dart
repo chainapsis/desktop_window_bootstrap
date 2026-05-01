@@ -4,11 +4,6 @@ import 'package:desktop_window_bootstrap/desktop_window_bootstrap.dart';
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
   await DesktopWindowBootstrap.initialize();
-  await DesktopWindowBootstrap.applyMacOSDesignWindowLayout(
-    size: const Size(1080, 720),
-    minimumSize: const Size(1080, 720),
-    center: true,
-  );
   runApp(const MyApp());
 }
 
