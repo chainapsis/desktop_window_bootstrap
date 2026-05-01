@@ -1,15 +1,27 @@
 # desktop_window_bootstrap
 
-A new Flutter plugin project.
+Minimal desktop window bootstrap helpers for Flutter desktop apps.
 
-## Getting Started
+## Windows Client Area
 
-This project is a starting point for a Flutter
-[plug-in package](https://flutter.dev/to/develop-plugins),
-a specialized package that includes platform-specific implementation code for
-Android and/or iOS.
+`applyWindowsClientAreaLayout` adjusts the native Windows outer HWND so the
+Flutter client area matches a design window size after a caller-supplied top
+inset is removed.
 
-For help getting started with Flutter development, view the
-[online documentation](https://docs.flutter.dev), which offers tutorials,
-samples, guidance on mobile development, and a full API reference.
+The inset is intentionally not owned by this package. Apps that design against a
+macOS full-size-content window should pass their own macOS titlebar/safe-area
+height, for example `32`.
+
+```dart
+await DesktopWindowBootstrap.applyWindowsClientAreaLayout(
+  windowSize: const Size(1080, 720),
+  minimumWindowSize: const Size(1080, 720),
+  contentTopInset: 32,
+  center: true,
+);
+```
+
+With those values, Windows targets a Flutter client area of `1080 x 688`.
+`getWindowsClientAreaSize()` returns the current Windows client area in logical
+pixels for resize reconciliation.
 

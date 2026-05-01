@@ -2,12 +2,17 @@
 
 #include <windows.h>
 #include <dwmapi.h>
+#include <shellscalingapi.h>
 
 #include <flutter/method_channel.h>
 #include <flutter/plugin_registrar_windows.h>
 #include <flutter/standard_method_codec.h>
 
+#include <algorithm>
+#include <cmath>
+#include <cstdint>
 #include <memory>
+#include <optional>
 
 namespace {
 
@@ -80,6 +85,62 @@ DWORD GetWindowsBuildNumber() {
   return info.dwBuildNumber;
 }
 
+std::optional<double> GetDoubleArgument(const flutter::EncodableMap& args,
+                                        const char* name) {
+  const auto value = args.find(flutter::EncodableValue(name));
+  if (value == args.end()) {
+    return std::nullopt;
+  }
+  if (const auto* double_value = std::get_if<double>(&value->second)) {
+    return *double_value;
+  }
+  if (const auto* int32_value = std::get_if<int32_t>(&value->second)) {
+    return static_cast<double>(*int32_value);
+  }
+  if (const auto* int64_value = std::get_if<int64_t>(&value->second)) {
+    return static_cast<double>(*int64_value);
+  }
+  return std::nullopt;
+}
+
+bool GetBoolArgument(const flutter::EncodableMap& args,
+                     const char* name,
+                     bool fallback) {
+  const auto value = args.find(flutter::EncodableValue(name));
+  if (value == args.end()) {
+    return fallback;
+  }
+  if (const auto* bool_value = std::get_if<bool>(&value->second)) {
+    return *bool_value;
+  }
+  return fallback;
+}
+
+double ClientHeightForWindowHeight(double window_height,
+                                   double content_top_inset) {
+  return std::max(1.0, window_height - std::max(0.0, content_top_inset));
+}
+
+int RoundedPhysicalPixels(double logical_value, double scale_factor) {
+  return static_cast<int>(std::round(logical_value * scale_factor));
+}
+
+double GetMonitorScaleFactor(HWND hwnd) {
+  const HMONITOR monitor = ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+  if (!monitor) {
+    return 1.0;
+  }
+
+  UINT dpi_x = 0;
+  UINT dpi_y = 0;
+  if (SUCCEEDED(::GetDpiForMonitor(
+          monitor, MDT_EFFECTIVE_DPI, &dpi_x, &dpi_y)) &&
+      dpi_x > 0) {
+    return dpi_x / 96.0;
+  }
+  return 1.0;
+}
+
 }  // namespace
 
 namespace desktop_window_bootstrap {
@@ -103,9 +164,18 @@ void DesktopWindowBootstrapPlugin::RegisterWithRegistrar(
 
 DesktopWindowBootstrapPlugin::DesktopWindowBootstrapPlugin(
     flutter::PluginRegistrarWindows* registrar)
-    : registrar_(registrar) {}
+    : registrar_(registrar) {
+  window_proc_id_ = registrar_->RegisterTopLevelWindowProcDelegate(
+      [this](HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+        return HandleWindowProc(hwnd, message, wparam, lparam);
+      });
+}
 
-DesktopWindowBootstrapPlugin::~DesktopWindowBootstrapPlugin() {}
+DesktopWindowBootstrapPlugin::~DesktopWindowBootstrapPlugin() {
+  if (window_proc_id_ != -1) {
+    registrar_->UnregisterTopLevelWindowProcDelegate(window_proc_id_);
+  }
+}
 
 HWND DesktopWindowBootstrapPlugin::GetParentWindow() const {
   return ::GetAncestor(registrar_->GetView()->GetNativeWindow(), GA_ROOT);
@@ -172,6 +242,245 @@ void DesktopWindowBootstrapPlugin::ApplySystemBackdrop() const {
   set_window_composition_attribute(hwnd, &data);
 }
 
+bool DesktopWindowBootstrapPlugin::ApplyWindowsClientAreaLayout(
+    const flutter::EncodableMap& args) {
+  const auto width = GetDoubleArgument(args, "width");
+  const auto height = GetDoubleArgument(args, "height");
+  if (!width || !height || *width <= 0 || *height <= 0) {
+    return false;
+  }
+
+  const double content_top_inset =
+      GetDoubleArgument(args, "contentTopInset").value_or(0.0);
+  const double client_width = std::max(1.0, *width);
+  const double client_height =
+      ClientHeightForWindowHeight(*height, content_top_inset);
+
+  const auto minimum_width = GetDoubleArgument(args, "minimumWidth");
+  const auto minimum_height = GetDoubleArgument(args, "minimumHeight");
+  if (minimum_width && minimum_height && *minimum_width > 0 &&
+      *minimum_height > 0) {
+    minimum_client_width_ = std::max(1.0, *minimum_width);
+    minimum_client_height_ =
+        ClientHeightForWindowHeight(*minimum_height, content_top_inset);
+  }
+
+  const bool enforce_aspect_ratio =
+      GetBoolArgument(args, "enforceAspectRatio", true);
+  client_aspect_ratio_ =
+      enforce_aspect_ratio ? client_width / client_height : 0.0;
+
+  if (!GetBoolArgument(args, "resize", true)) {
+    return true;
+  }
+  return SetClientSize(
+      client_width, client_height, GetBoolArgument(args, "center", false));
+}
+
+flutter::EncodableMap DesktopWindowBootstrapPlugin::GetWindowsClientAreaSize()
+    const {
+  flutter::EncodableMap result;
+  const HWND hwnd = GetParentWindow();
+  RECT client_rect = {};
+  if (!hwnd || !::GetClientRect(hwnd, &client_rect)) {
+    result[flutter::EncodableValue("width")] = flutter::EncodableValue(0.0);
+    result[flutter::EncodableValue("height")] = flutter::EncodableValue(0.0);
+    return result;
+  }
+
+  const double scale_factor = GetWindowScaleFactor();
+  result[flutter::EncodableValue("width")] = flutter::EncodableValue(
+      (client_rect.right - client_rect.left) / scale_factor);
+  result[flutter::EncodableValue("height")] = flutter::EncodableValue(
+      (client_rect.bottom - client_rect.top) / scale_factor);
+  return result;
+}
+
+bool DesktopWindowBootstrapPlugin::SetClientSize(double width,
+                                                 double height,
+                                                 bool center) {
+  const HWND hwnd = GetParentWindow();
+  if (!hwnd) {
+    return false;
+  }
+
+  const double scale_factor = GetWindowScaleFactor();
+  const SIZE non_client_size = GetNonClientSize();
+  const int outer_width =
+      RoundedPhysicalPixels(width, scale_factor) + non_client_size.cx;
+  const int outer_height =
+      RoundedPhysicalPixels(height, scale_factor) + non_client_size.cy;
+
+  int x = 0;
+  int y = 0;
+  UINT flags = SWP_NOZORDER | SWP_NOOWNERZORDER;
+  if (center) {
+    HMONITOR monitor = ::MonitorFromWindow(hwnd, MONITOR_DEFAULTTONEAREST);
+    MONITORINFO monitor_info = {};
+    monitor_info.cbSize = sizeof(MONITORINFO);
+    if (monitor && ::GetMonitorInfo(monitor, &monitor_info)) {
+      const RECT work_area = monitor_info.rcWork;
+      x = work_area.left +
+          ((work_area.right - work_area.left) - outer_width) / 2;
+      y = work_area.top +
+          ((work_area.bottom - work_area.top) - outer_height) / 2;
+    } else {
+      flags |= SWP_NOMOVE;
+    }
+  } else {
+    flags |= SWP_NOMOVE;
+  }
+
+  return ::SetWindowPos(hwnd, HWND_TOP, x, y, outer_width, outer_height,
+                        flags) == TRUE;
+}
+
+SIZE DesktopWindowBootstrapPlugin::GetNonClientSize() const {
+  const HWND hwnd = GetParentWindow();
+  RECT window_rect = {};
+  RECT client_rect = {};
+  if (!hwnd || !::GetWindowRect(hwnd, &window_rect) ||
+      !::GetClientRect(hwnd, &client_rect)) {
+    return SIZE{0, 0};
+  }
+
+  const int window_width = window_rect.right - window_rect.left;
+  const int window_height = window_rect.bottom - window_rect.top;
+  const int client_width = client_rect.right - client_rect.left;
+  const int client_height = client_rect.bottom - client_rect.top;
+  return SIZE{std::max(0, window_width - client_width),
+              std::max(0, window_height - client_height)};
+}
+
+double DesktopWindowBootstrapPlugin::GetWindowScaleFactor() const {
+  const HWND hwnd = GetParentWindow();
+  if (!hwnd) {
+    return 1.0;
+  }
+
+  const UINT dpi = ::GetDpiForWindow(hwnd);
+  if (::IsWindowVisible(hwnd) && dpi > 0) {
+    return dpi / 96.0;
+  }
+
+  const double monitor_scale_factor = GetMonitorScaleFactor(hwnd);
+  if (monitor_scale_factor > 0) {
+    return monitor_scale_factor;
+  }
+  return dpi > 0 ? dpi / 96.0 : 1.0;
+}
+
+bool DesktopWindowBootstrapPlugin::ApplyMinimumClientSize(
+    LPARAM const lparam) const {
+  if (minimum_client_width_ <= 0 && minimum_client_height_ <= 0) {
+    return false;
+  }
+
+  auto* info = reinterpret_cast<MINMAXINFO*>(lparam);
+  const double scale_factor = GetWindowScaleFactor();
+  const SIZE non_client_size = GetNonClientSize();
+
+  if (minimum_client_width_ > 0) {
+    const LONG minimum_outer_width =
+        RoundedPhysicalPixels(minimum_client_width_, scale_factor) +
+        non_client_size.cx;
+    info->ptMinTrackSize.x =
+        std::max(info->ptMinTrackSize.x, minimum_outer_width);
+  }
+  if (minimum_client_height_ > 0) {
+    const LONG minimum_outer_height =
+        RoundedPhysicalPixels(minimum_client_height_, scale_factor) +
+        non_client_size.cy;
+    info->ptMinTrackSize.y =
+        std::max(info->ptMinTrackSize.y, minimum_outer_height);
+  }
+  return true;
+}
+
+bool DesktopWindowBootstrapPlugin::ApplyClientAspectRatio(
+    WPARAM const wparam,
+    LPARAM const lparam) const {
+  if (client_aspect_ratio_ <= 0) {
+    return false;
+  }
+
+  auto* rect = reinterpret_cast<RECT*>(lparam);
+  const SIZE non_client_size = GetNonClientSize();
+
+  int client_width = std::max(
+      1, static_cast<int>(rect->right - rect->left - non_client_size.cx));
+  int client_height = std::max(
+      1, static_cast<int>(rect->bottom - rect->top - non_client_size.cy));
+
+  const bool is_resizing_horizontally =
+      wparam == WMSZ_LEFT || wparam == WMSZ_RIGHT ||
+      wparam == WMSZ_TOPLEFT || wparam == WMSZ_BOTTOMLEFT;
+
+  if (is_resizing_horizontally) {
+    client_height =
+        std::max(1, static_cast<int>(std::round(client_width /
+                                                client_aspect_ratio_)));
+  } else {
+    client_width =
+        std::max(1, static_cast<int>(std::round(client_height *
+                                                client_aspect_ratio_)));
+  }
+
+  const int outer_width = client_width + non_client_size.cx;
+  const int outer_height = client_height + non_client_size.cy;
+  int left = rect->left;
+  int top = rect->top;
+  int right = rect->right;
+  int bottom = rect->bottom;
+
+  switch (wparam) {
+    case WMSZ_RIGHT:
+    case WMSZ_BOTTOM:
+      right = left + outer_width;
+      bottom = top + outer_height;
+      break;
+    case WMSZ_TOP:
+      right = left + outer_width;
+      top = bottom - outer_height;
+      break;
+    case WMSZ_LEFT:
+    case WMSZ_TOPLEFT:
+      left = right - outer_width;
+      top = bottom - outer_height;
+      break;
+    case WMSZ_TOPRIGHT:
+      right = left + outer_width;
+      top = bottom - outer_height;
+      break;
+    case WMSZ_BOTTOMLEFT:
+      left = right - outer_width;
+      bottom = top + outer_height;
+      break;
+    case WMSZ_BOTTOMRIGHT:
+      right = left + outer_width;
+      bottom = top + outer_height;
+      break;
+  }
+
+  rect->left = left;
+  rect->top = top;
+  rect->right = right;
+  rect->bottom = bottom;
+  return true;
+}
+
+std::optional<LRESULT> DesktopWindowBootstrapPlugin::HandleWindowProc(
+    HWND hwnd, UINT message, WPARAM wparam, LPARAM lparam) {
+  (void)hwnd;
+  if (message == WM_GETMINMAXINFO && ApplyMinimumClientSize(lparam)) {
+    return 0;
+  }
+  if (message == WM_SIZING && ApplyClientAspectRatio(wparam, lparam)) {
+    return TRUE;
+  }
+  return std::nullopt;
+}
+
 void DesktopWindowBootstrapPlugin::HandleMethodCall(
     const flutter::MethodCall<flutter::EncodableValue>& method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
@@ -180,6 +489,17 @@ void DesktopWindowBootstrapPlugin::HandleMethodCall(
     result->Success(flutter::EncodableValue(true));
   } else if (method_call.method_name() == "getTitlebarInset") {
     result->Success(flutter::EncodableValue(0.0));
+  } else if (method_call.method_name() == "applyWindowsClientAreaLayout") {
+    const auto* args =
+        std::get_if<flutter::EncodableMap>(method_call.arguments());
+    if (!args) {
+      result->Error("bad_args", "Expected a map of layout arguments.");
+      return;
+    }
+    result->Success(
+        flutter::EncodableValue(ApplyWindowsClientAreaLayout(*args)));
+  } else if (method_call.method_name() == "getWindowsClientAreaSize") {
+    result->Success(flutter::EncodableValue(GetWindowsClientAreaSize()));
   } else {
     result->NotImplemented();
   }

@@ -5,7 +5,9 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/services.dart';
 import 'package:flutter/widgets.dart';
 
-const MethodChannel _channel = MethodChannel('desktop_window_bootstrap/methods');
+const MethodChannel _channel = MethodChannel(
+  'desktop_window_bootstrap/methods',
+);
 
 /// App-specific desktop window bootstrap helpers.
 class DesktopWindowBootstrap {
@@ -43,6 +45,74 @@ class DesktopWindowBootstrap {
     return _cachedTitlebarInset;
   }
 
+  /// Applies a Windows client-area layout derived from a design window size.
+  ///
+  /// [contentTopInset] is supplied by the app because it belongs to the app's
+  /// macOS shell/design policy. For example, a `Size(1080, 720)` design window
+  /// with a `32` top inset targets a Windows Flutter client area of
+  /// `1080 x 688`.
+  static Future<bool> applyWindowsClientAreaLayout({
+    required Size windowSize,
+    Size? minimumWindowSize,
+    required double contentTopInset,
+    bool enforceAspectRatio = true,
+    bool resize = true,
+    bool center = false,
+  }) async {
+    if (kIsWeb || !Platform.isWindows) return false;
+    if (windowSize.width <= 0 || windowSize.height <= 0) {
+      throw ArgumentError.value(windowSize, 'windowSize', 'Must be positive.');
+    }
+    if (minimumWindowSize != null &&
+        (minimumWindowSize.width <= 0 || minimumWindowSize.height <= 0)) {
+      throw ArgumentError.value(
+        minimumWindowSize,
+        'minimumWindowSize',
+        'Must be positive when provided.',
+      );
+    }
+    if (contentTopInset < 0) {
+      throw ArgumentError.value(
+        contentTopInset,
+        'contentTopInset',
+        'Must be non-negative.',
+      );
+    }
+
+    final arguments = <String, Object?>{
+      'width': windowSize.width,
+      'height': windowSize.height,
+      'contentTopInset': contentTopInset,
+      'enforceAspectRatio': enforceAspectRatio,
+      'resize': resize,
+      'center': center,
+    };
+    if (minimumWindowSize != null) {
+      arguments['minimumWidth'] = minimumWindowSize.width;
+      arguments['minimumHeight'] = minimumWindowSize.height;
+    }
+
+    final applied = await _channel.invokeMethod<bool>(
+      'applyWindowsClientAreaLayout',
+      arguments,
+    );
+    return applied ?? false;
+  }
+
+  /// Returns the current Windows Flutter client-area size in logical pixels.
+  static Future<Size> getWindowsClientAreaSize() async {
+    if (kIsWeb || !Platform.isWindows) return Size.zero;
+    final result = await _channel.invokeMapMethod<String, Object?>(
+      'getWindowsClientAreaSize',
+    );
+    final width = result?['width'];
+    final height = result?['height'];
+    if (width is num && height is num) {
+      return Size(width.toDouble(), height.toDouble());
+    }
+    return Size.zero;
+  }
+
   static Future<double> _readTitlebarInset() async {
     final inset = await _channel.invokeMethod<double>('getTitlebarInset');
     return inset ?? 0;
@@ -61,10 +131,12 @@ class DesktopWindowTitlebarSafeArea extends StatefulWidget {
   final bool isEnabled;
 
   @override
-  State<DesktopWindowTitlebarSafeArea> createState() => _DesktopWindowTitlebarSafeAreaState();
+  State<DesktopWindowTitlebarSafeArea> createState() =>
+      _DesktopWindowTitlebarSafeAreaState();
 }
 
-class _DesktopWindowTitlebarSafeAreaState extends State<DesktopWindowTitlebarSafeArea>
+class _DesktopWindowTitlebarSafeAreaState
+    extends State<DesktopWindowTitlebarSafeArea>
     with WidgetsBindingObserver {
   static const _metricsRefreshDebounce = Duration(milliseconds: 75);
 

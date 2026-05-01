@@ -11,7 +11,7 @@ void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
 
   tearDown(() async {
-    await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
         .setMockMethodCallHandler(_channel, null);
   });
 
@@ -23,8 +23,8 @@ void main() {
       }
 
       var getTitlebarInsetCallCount = 0;
-      await TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
-          .setMockMethodCallHandler(_channel, (call) {
+      TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+          .setMockMethodCallHandler(_channel, (call) async {
             if (call.method != 'getTitlebarInset') {
               return null;
             }
@@ -39,7 +39,7 @@ void main() {
                 const Duration(milliseconds: 10),
                 () => 20,
               ),
-              _ => 20,
+              _ => 20.0,
             };
           });
 
@@ -73,6 +73,47 @@ void main() {
     },
     skip: !Platform.isMacOS,
   );
+
+  test('forwards Windows client-area layout arguments', () async {
+    MethodCall? capturedCall;
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_channel, (call) async {
+          capturedCall = call;
+          return true;
+        });
+
+    final applied = await DesktopWindowBootstrap.applyWindowsClientAreaLayout(
+      windowSize: const Size(1080, 720),
+      minimumWindowSize: const Size(1080, 720),
+      contentTopInset: 32,
+      resize: false,
+      center: true,
+    );
+
+    expect(applied, isTrue);
+    expect(capturedCall?.method, 'applyWindowsClientAreaLayout');
+    final arguments = capturedCall?.arguments as Map<Object?, Object?>;
+    expect(arguments['width'], 1080);
+    expect(arguments['height'], 720);
+    expect(arguments['minimumWidth'], 1080);
+    expect(arguments['minimumHeight'], 720);
+    expect(arguments['contentTopInset'], 32);
+    expect(arguments['enforceAspectRatio'], isTrue);
+    expect(arguments['resize'], isFalse);
+    expect(arguments['center'], isTrue);
+  }, skip: !Platform.isWindows);
+
+  test('reads Windows client-area size', () async {
+    TestDefaultBinaryMessengerBinding.instance.defaultBinaryMessenger
+        .setMockMethodCallHandler(_channel, (call) async {
+          expect(call.method, 'getWindowsClientAreaSize');
+          return <String, Object?>{'width': 1080.0, 'height': 688.0};
+        });
+
+    final size = await DesktopWindowBootstrap.getWindowsClientAreaSize();
+
+    expect(size, const Size(1080, 688));
+  }, skip: !Platform.isWindows);
 }
 
 double _topPadding(WidgetTester tester) {
