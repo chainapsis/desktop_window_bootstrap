@@ -131,12 +131,9 @@ double GetMonitorScaleFactor(HWND hwnd) {
     return 1.0;
   }
 
-  UINT dpi_x = 0;
-  UINT dpi_y = 0;
-  if (SUCCEEDED(::GetDpiForMonitor(
-          monitor, MDT_EFFECTIVE_DPI, &dpi_x, &dpi_y)) &&
-      dpi_x > 0) {
-    return dpi_x / 96.0;
+  DEVICE_SCALE_FACTOR scale_factor = SCALE_100_PERCENT;
+  if (SUCCEEDED(::GetScaleFactorForMonitor(monitor, &scale_factor))) {
+    return static_cast<double>(scale_factor) / 100.0;
   }
   return 1.0;
 }
