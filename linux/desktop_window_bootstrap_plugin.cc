@@ -15,38 +15,10 @@ struct _DesktopWindowBootstrapPlugin {
   GObject parent_instance;
 };
 
-static double g_red = 0.0;
-static double g_green = 0.0;
-static double g_blue = 0.0;
-static double g_alpha = 0.0;
-static FlPluginRegistrar* g_registrar = nullptr;
-
 G_DEFINE_TYPE(
     DesktopWindowBootstrapPlugin,
     desktop_window_bootstrap_plugin,
     g_object_get_type())
-
-static gboolean DrawCallback(GtkWidget* widget, cairo_t* cr, gpointer data) {
-  cairo_save(cr);
-  cairo_set_source_rgba(cr, g_red, g_green, g_blue, g_alpha);
-  cairo_set_operator(cr, CAIRO_OPERATOR_SOURCE);
-  cairo_paint(cr);
-  cairo_restore(cr);
-  return FALSE;
-}
-
-static void ApplyTransparentBackground() {
-  FlView* view = fl_plugin_registrar_get_view(g_registrar);
-  GtkWindow* window = GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(view)));
-  gtk_widget_hide(GTK_WIDGET(window));
-  gtk_widget_hide(GTK_WIDGET(view));
-  g_red = 0.0;
-  g_green = 0.0;
-  g_blue = 0.0;
-  g_alpha = 0.0;
-  gtk_widget_show(GTK_WIDGET(window));
-  gtk_widget_show(GTK_WIDGET(view));
-}
 
 static void desktop_window_bootstrap_plugin_handle_method_call(
     DesktopWindowBootstrapPlugin* self,
@@ -55,7 +27,9 @@ static void desktop_window_bootstrap_plugin_handle_method_call(
   const gchar* method = fl_method_call_get_name(method_call);
 
   if (strcmp(method, "initialize") == 0) {
-    ApplyTransparentBackground();
+    // Linux transparency behavior varies significantly across GTK backends,
+    // compositors, and VMs. Leave the native window opaque and let Flutter draw
+    // an explicit app background instead.
     response = FL_METHOD_RESPONSE(fl_method_success_response_new(nullptr));
   } else if (strcmp(method, "getTitlebarInset") == 0) {
     g_autoptr(FlValue) result = fl_value_new_float(0.0);
@@ -103,19 +77,5 @@ void desktop_window_bootstrap_plugin_register_with_registrar(
       g_object_ref(plugin),
       g_object_unref);
 
-  FlView* view = fl_plugin_registrar_get_view(registrar);
-  GtkWindow* window = GTK_WINDOW(gtk_widget_get_toplevel(GTK_WIDGET(view)));
-  gtk_widget_set_app_paintable(GTK_WIDGET(window), TRUE);
-
-  GdkScreen* screen = gdk_screen_get_default();
-  GdkVisual* visual = gdk_screen_get_rgba_visual(screen);
-  if (visual != nullptr && gdk_screen_is_composited(screen)) {
-    gtk_widget_set_visual(GTK_WIDGET(window), visual);
-  }
-  g_signal_connect(G_OBJECT(window), "draw", G_CALLBACK(DrawCallback), nullptr);
-  gtk_widget_show(GTK_WIDGET(window));
-  gtk_widget_show(GTK_WIDGET(view));
-
-  g_registrar = FL_PLUGIN_REGISTRAR(g_object_ref(registrar));
   g_object_unref(plugin);
 }
