@@ -1,16 +1,26 @@
 import Cocoa
 import FlutterMacOS
 
+public enum DesktopWindowVisualStyle: String {
+  case system
+  case opaque
+}
+
 public enum DesktopWindowBootstrapMacOS {
   private static weak var mainWindow: NSWindow?
   private static var fullscreenObservers: [NSObjectProtocol] = []
   private static var cachedWindowedTitlebarInset: Double = 0
+  private static var visualStyle: DesktopWindowVisualStyle = .system
 
   @discardableResult
-  public static func start(mainFlutterWindow: NSWindow) -> DesktopWindowBootstrapViewController {
-    configureWindowShell(mainFlutterWindow)
+  public static func start(
+    mainFlutterWindow: NSWindow,
+    visualStyle: DesktopWindowVisualStyle = .system
+  ) -> DesktopWindowBootstrapViewController {
+    self.visualStyle = visualStyle
+    configureWindowShell(mainFlutterWindow, visualStyle: visualStyle)
 
-    let controller = DesktopWindowBootstrapViewController()
+    let controller = DesktopWindowBootstrapViewController(visualStyle: visualStyle)
     let windowFrame = mainFlutterWindow.frame
     mainFlutterWindow.contentViewController = controller
     mainFlutterWindow.setFrame(windowFrame, display: true)
@@ -41,12 +51,40 @@ public enum DesktopWindowBootstrapMacOS {
     return cachedWindowedTitlebarInset
   }
 
-  private static func configureWindowShell(_ window: NSWindow) {
-    window.isOpaque = false
-    window.backgroundColor = .clear
+  private static func configureWindowShell(
+    _ window: NSWindow,
+    visualStyle: DesktopWindowVisualStyle
+  ) {
+    switch visualStyle {
+    case .system:
+      window.isOpaque = false
+      window.backgroundColor = .clear
+    case .opaque:
+      window.isOpaque = true
+      window.backgroundColor = .windowBackgroundColor
+    }
     window.titlebarAppearsTransparent = true
     window.titleVisibility = .hidden
     window.styleMask.insert(.fullSizeContentView)
+  }
+
+  private static func configureVisualEffect(
+    _ visualEffectView: NSVisualEffectView,
+    visualStyle: DesktopWindowVisualStyle
+  ) {
+    visualEffectView.state = .active
+    switch visualStyle {
+    case .system:
+      visualEffectView.blendingMode = .behindWindow
+      if #available(macOS 10.14, *) {
+        visualEffectView.material = .fullScreenUI
+      }
+    case .opaque:
+      visualEffectView.blendingMode = .withinWindow
+      if #available(macOS 10.14, *) {
+        visualEffectView.material = .windowBackground
+      }
+    }
   }
 
   private static func installFullscreenObservers() {
@@ -82,12 +120,9 @@ public enum DesktopWindowBootstrapMacOS {
       return
     }
 
-    configureWindowShell(window)
+    configureWindowShell(window, visualStyle: visualStyle)
     window.standardWindowButton(.zoomButton)?.isEnabled = false
-    controller.visualEffectView.state = .active
-    if #available(macOS 10.14, *) {
-      controller.visualEffectView.material = .fullScreenUI
-    }
+    configureVisualEffect(controller.visualEffectView, visualStyle: visualStyle)
     window.invalidateShadow()
   }
 
@@ -98,11 +133,8 @@ public enum DesktopWindowBootstrapMacOS {
       return
     }
 
-    window.isOpaque = true
-    window.backgroundColor = .windowBackgroundColor
-    if #available(macOS 10.14, *) {
-      controller.visualEffectView.material = .windowBackground
-    }
+    configureWindowShell(window, visualStyle: .opaque)
+    configureVisualEffect(controller.visualEffectView, visualStyle: .opaque)
     window.invalidateShadow()
   }
 }

@@ -9,6 +9,21 @@ const MethodChannel _channel = MethodChannel(
   'desktop_window_bootstrap/methods',
 );
 
+/// Native visual treatment applied to the desktop window.
+enum DesktopWindowVisualStyle {
+  /// Preserve the platform-specific material behavior this package used before
+  /// explicit visual styles existed.
+  system,
+
+  /// Keep the native window opaque and let Flutter paint the app background.
+  opaque;
+
+  String get _channelValue => switch (this) {
+    DesktopWindowVisualStyle.system => 'system',
+    DesktopWindowVisualStyle.opaque => 'opaque',
+  };
+}
+
 /// App-specific desktop window bootstrap helpers.
 class DesktopWindowBootstrap {
   DesktopWindowBootstrap._();
@@ -19,10 +34,14 @@ class DesktopWindowBootstrap {
   ///
   /// macOS startup appearance is configured natively before the window is
   /// shown, so the method-channel hop is intentionally a no-op there.
-  static Future<void> initialize() async {
+  static Future<void> initialize({
+    DesktopWindowVisualStyle visualStyle = DesktopWindowVisualStyle.system,
+  }) async {
     if (kIsWeb) return;
     if (!_isSupportedDesktopPlatform) return;
-    await _channel.invokeMethod<void>('initialize');
+    await _channel.invokeMethod<void>('initialize', {
+      'visualStyle': visualStyle._channelValue,
+    });
     if (Platform.isMacOS) {
       _cachedTitlebarInset = await _readTitlebarInset();
     }

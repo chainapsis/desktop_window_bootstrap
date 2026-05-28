@@ -36,6 +36,7 @@ class DesktopWindowBootstrapPlugin : public flutter::Plugin {
  private:
   HWND GetParentWindow() const;
   void ApplySystemBackdrop() const;
+  void ClearSystemBackdrop() const;
   bool ApplyWindowsClientAreaLayout(const flutter::EncodableMap& args);
   flutter::EncodableMap GetWindowsClientAreaSize() const;
   bool SetClientSize(double width, double height, bool center);

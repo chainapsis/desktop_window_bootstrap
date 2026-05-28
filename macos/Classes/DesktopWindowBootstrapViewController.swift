@@ -3,6 +3,7 @@ import FlutterMacOS
 
 public final class DesktopWindowBootstrapViewController: NSViewController {
   private let _flutterViewController: FlutterViewController
+  private let visualStyle: DesktopWindowVisualStyle
 
   public var flutterViewController: FlutterViewController {
     _flutterViewController
@@ -12,8 +13,12 @@ public final class DesktopWindowBootstrapViewController: NSViewController {
     view as! NSVisualEffectView
   }
 
-  public init(flutterViewController: FlutterViewController? = nil) {
+  public init(
+    flutterViewController: FlutterViewController? = nil,
+    visualStyle: DesktopWindowVisualStyle = .system
+  ) {
     _flutterViewController = flutterViewController ?? FlutterViewController()
+    self.visualStyle = visualStyle
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -24,10 +29,18 @@ public final class DesktopWindowBootstrapViewController: NSViewController {
   public override func loadView() {
     let effectView = NSVisualEffectView()
     effectView.autoresizingMask = [.width, .height]
-    effectView.blendingMode = .behindWindow
     effectView.state = .active
-    if #available(macOS 10.14, *) {
-      effectView.material = .fullScreenUI
+    switch visualStyle {
+    case .system:
+      effectView.blendingMode = .behindWindow
+      if #available(macOS 10.14, *) {
+        effectView.material = .fullScreenUI
+      }
+    case .opaque:
+      effectView.blendingMode = .withinWindow
+      if #available(macOS 10.14, *) {
+        effectView.material = .windowBackground
+      }
     }
     view = effectView
   }

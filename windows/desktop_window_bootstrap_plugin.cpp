@@ -13,6 +13,7 @@
 #include <cstdint>
 #include <memory>
 #include <optional>
+#include <string>
 
 namespace {
 
@@ -29,6 +30,7 @@ typedef struct _WINDOWCOMPOSITIONATTRIBDATA {
 } WINDOWCOMPOSITIONATTRIBDATA;
 
 typedef enum _ACCENT_STATE {
+  ACCENT_DISABLED = 0,
   ACCENT_ENABLE_ACRYLICBLURBEHIND = 4,
 } ACCENT_STATE;
 
@@ -99,6 +101,18 @@ std::optional<double> GetDoubleArgument(const flutter::EncodableMap& args,
   }
   if (const auto* int64_value = std::get_if<int64_t>(&value->second)) {
     return static_cast<double>(*int64_value);
+  }
+  return std::nullopt;
+}
+
+std::optional<std::string> GetStringArgument(const flutter::EncodableMap& args,
+                                             const char* name) {
+  const auto value = args.find(flutter::EncodableValue(name));
+  if (value == args.end()) {
+    return std::nullopt;
+  }
+  if (const auto* string_value = std::get_if<std::string>(&value->second)) {
+    return *string_value;
   }
   return std::nullopt;
 }
@@ -229,6 +243,47 @@ void DesktopWindowBootstrapPlugin::ApplySystemBackdrop() const {
       ACCENT_ENABLE_ACRYLICBLURBEHIND,
       2,
       0xCC222222,
+      0,
+  };
+  WINDOWCOMPOSITIONATTRIBDATA data = {
+      WCA_ACCENT_POLICY,
+      &accent,
+      sizeof(accent),
+  };
+  set_window_composition_attribute(hwnd, &data);
+}
+
+void DesktopWindowBootstrapPlugin::ClearSystemBackdrop() const {
+  const HWND hwnd = GetParentWindow();
+  if (!hwnd) {
+    return;
+  }
+
+  MARGINS margins = {0, 0, 0, 0};
+  ::DwmExtendFrameIntoClientArea(hwnd, &margins);
+
+  if (GetWindowsBuildNumber() >= 22523) {
+    INT backdrop_type = 1;  // DWMSBT_NONE.
+    ::DwmSetWindowAttribute(
+        hwnd, DWMWA_SYSTEMBACKDROP_TYPE,
+        &backdrop_type, sizeof(backdrop_type));
+  }
+
+  const auto user32 = ::GetModuleHandleA("user32.dll");
+  if (!user32) {
+    return;
+  }
+  const auto set_window_composition_attribute =
+      reinterpret_cast<SetWindowCompositionAttributeFn>(
+          ::GetProcAddress(user32, "SetWindowCompositionAttribute"));
+  if (!set_window_composition_attribute) {
+    return;
+  }
+
+  ACCENT_POLICY accent = {
+      ACCENT_DISABLED,
+      0,
+      0,
       0,
   };
   WINDOWCOMPOSITIONATTRIBDATA data = {
@@ -482,7 +537,16 @@ void DesktopWindowBootstrapPlugin::HandleMethodCall(
     const flutter::MethodCall<flutter::EncodableValue>& method_call,
     std::unique_ptr<flutter::MethodResult<flutter::EncodableValue>> result) {
   if (method_call.method_name() == "initialize") {
-    ApplySystemBackdrop();
+    std::string visual_style = "system";
+    if (const auto* args =
+            std::get_if<flutter::EncodableMap>(method_call.arguments())) {
+      visual_style = GetStringArgument(*args, "visualStyle").value_or("system");
+    }
+    if (visual_style == "opaque") {
+      ClearSystemBackdrop();
+    } else {
+      ApplySystemBackdrop();
+    }
     result->Success(flutter::EncodableValue(true));
   } else if (method_call.method_name() == "getTitlebarInset") {
     result->Success(flutter::EncodableValue(0.0));
