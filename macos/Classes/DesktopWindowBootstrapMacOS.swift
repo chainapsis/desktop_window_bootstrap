@@ -11,16 +11,26 @@ public enum DesktopWindowBootstrapMacOS {
   private static var fullscreenObservers: [NSObjectProtocol] = []
   private static var cachedWindowedTitlebarInset: Double = 0
   private static var visualStyle: DesktopWindowVisualStyle = .system
+  private static var opaqueBackgroundColor: NSColor?
 
   @discardableResult
   public static func start(
     mainFlutterWindow: NSWindow,
-    visualStyle: DesktopWindowVisualStyle = .system
+    visualStyle: DesktopWindowVisualStyle = .system,
+    backgroundColor: NSColor? = nil
   ) -> DesktopWindowBootstrapViewController {
     self.visualStyle = visualStyle
-    configureWindowShell(mainFlutterWindow, visualStyle: visualStyle)
+    self.opaqueBackgroundColor = backgroundColor
+    configureWindowShell(
+      mainFlutterWindow,
+      visualStyle: visualStyle,
+      backgroundColor: backgroundColor
+    )
 
-    let controller = DesktopWindowBootstrapViewController(visualStyle: visualStyle)
+    let controller = DesktopWindowBootstrapViewController(
+      visualStyle: visualStyle,
+      backgroundColor: backgroundColor
+    )
     let windowFrame = mainFlutterWindow.frame
     mainFlutterWindow.contentViewController = controller
     mainFlutterWindow.setFrame(windowFrame, display: true)
@@ -51,9 +61,15 @@ public enum DesktopWindowBootstrapMacOS {
     return cachedWindowedTitlebarInset
   }
 
+  public static func setOpaqueBackgroundColor(_ backgroundColor: NSColor?) {
+    opaqueBackgroundColor = backgroundColor
+    applyCurrentAppearance()
+  }
+
   private static func configureWindowShell(
     _ window: NSWindow,
-    visualStyle: DesktopWindowVisualStyle
+    visualStyle: DesktopWindowVisualStyle,
+    backgroundColor: NSColor?
   ) {
     switch visualStyle {
     case .system:
@@ -61,7 +77,7 @@ public enum DesktopWindowBootstrapMacOS {
       window.backgroundColor = .clear
     case .opaque:
       window.isOpaque = true
-      window.backgroundColor = .windowBackgroundColor
+      window.backgroundColor = backgroundColor ?? .windowBackgroundColor
     }
     window.titlebarAppearsTransparent = true
     window.titleVisibility = .hidden
@@ -70,7 +86,8 @@ public enum DesktopWindowBootstrapMacOS {
 
   private static func configureVisualEffect(
     _ visualEffectView: NSVisualEffectView,
-    visualStyle: DesktopWindowVisualStyle
+    visualStyle: DesktopWindowVisualStyle,
+    backgroundColor: NSColor?
   ) {
     visualEffectView.state = .active
     switch visualStyle {
@@ -79,11 +96,31 @@ public enum DesktopWindowBootstrapMacOS {
       if #available(macOS 10.14, *) {
         visualEffectView.material = .fullScreenUI
       }
+      visualEffectView.layer?.backgroundColor = nil
     case .opaque:
       visualEffectView.blendingMode = .withinWindow
       if #available(macOS 10.14, *) {
         visualEffectView.material = .windowBackground
       }
+      if let backgroundColor {
+        visualEffectView.wantsLayer = true
+        visualEffectView.layer?.backgroundColor = backgroundColor.cgColor
+      } else {
+        visualEffectView.layer?.backgroundColor = nil
+      }
+    }
+  }
+
+  private static func configureFlutterBackground(
+    _ controller: DesktopWindowBootstrapViewController,
+    visualStyle: DesktopWindowVisualStyle,
+    backgroundColor: NSColor?
+  ) {
+    switch visualStyle {
+    case .system:
+      controller.flutterViewController.backgroundColor = .clear
+    case .opaque:
+      controller.flutterViewController.backgroundColor = backgroundColor ?? .clear
     }
   }
 
@@ -113,6 +150,17 @@ public enum DesktopWindowBootstrapMacOS {
     )
   }
 
+  private static func applyCurrentAppearance() {
+    guard let window = mainWindow else {
+      return
+    }
+    if window.styleMask.contains(.fullScreen) {
+      applyFullscreenAppearance()
+    } else {
+      applyWindowedAppearance()
+    }
+  }
+
   private static func applyWindowedAppearance() {
     guard let window = mainWindow,
           let controller = window.contentViewController as? DesktopWindowBootstrapViewController
@@ -120,9 +168,22 @@ public enum DesktopWindowBootstrapMacOS {
       return
     }
 
-    configureWindowShell(window, visualStyle: visualStyle)
+    configureWindowShell(
+      window,
+      visualStyle: visualStyle,
+      backgroundColor: opaqueBackgroundColor
+    )
     window.standardWindowButton(.zoomButton)?.isEnabled = false
-    configureVisualEffect(controller.visualEffectView, visualStyle: visualStyle)
+    configureVisualEffect(
+      controller.visualEffectView,
+      visualStyle: visualStyle,
+      backgroundColor: opaqueBackgroundColor
+    )
+    configureFlutterBackground(
+      controller,
+      visualStyle: visualStyle,
+      backgroundColor: opaqueBackgroundColor
+    )
     window.invalidateShadow()
   }
 
@@ -133,8 +194,21 @@ public enum DesktopWindowBootstrapMacOS {
       return
     }
 
-    configureWindowShell(window, visualStyle: .opaque)
-    configureVisualEffect(controller.visualEffectView, visualStyle: .opaque)
+    configureWindowShell(
+      window,
+      visualStyle: .opaque,
+      backgroundColor: opaqueBackgroundColor
+    )
+    configureVisualEffect(
+      controller.visualEffectView,
+      visualStyle: .opaque,
+      backgroundColor: opaqueBackgroundColor
+    )
+    configureFlutterBackground(
+      controller,
+      visualStyle: .opaque,
+      backgroundColor: opaqueBackgroundColor
+    )
     window.invalidateShadow()
   }
 }

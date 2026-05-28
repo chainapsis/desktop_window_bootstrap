@@ -4,6 +4,7 @@ import FlutterMacOS
 public final class DesktopWindowBootstrapViewController: NSViewController {
   private let _flutterViewController: FlutterViewController
   private let visualStyle: DesktopWindowVisualStyle
+  private let backgroundColor: NSColor?
 
   public var flutterViewController: FlutterViewController {
     _flutterViewController
@@ -15,10 +16,12 @@ public final class DesktopWindowBootstrapViewController: NSViewController {
 
   public init(
     flutterViewController: FlutterViewController? = nil,
-    visualStyle: DesktopWindowVisualStyle = .system
+    visualStyle: DesktopWindowVisualStyle = .system,
+    backgroundColor: NSColor? = nil
   ) {
     _flutterViewController = flutterViewController ?? FlutterViewController()
     self.visualStyle = visualStyle
+    self.backgroundColor = backgroundColor
     super.init(nibName: nil, bundle: nil)
   }
 
@@ -41,6 +44,10 @@ public final class DesktopWindowBootstrapViewController: NSViewController {
       if #available(macOS 10.14, *) {
         effectView.material = .windowBackground
       }
+      if let backgroundColor {
+        effectView.wantsLayer = true
+        effectView.layer?.backgroundColor = backgroundColor.cgColor
+      }
     }
     view = effectView
   }
@@ -51,7 +58,12 @@ public final class DesktopWindowBootstrapViewController: NSViewController {
     addChild(_flutterViewController)
     _flutterViewController.view.frame = view.bounds
     _flutterViewController.view.autoresizingMask = [.width, .height]
-    _flutterViewController.backgroundColor = .clear
+    switch visualStyle {
+    case .system:
+      _flutterViewController.backgroundColor = .clear
+    case .opaque:
+      _flutterViewController.backgroundColor = backgroundColor ?? .clear
+    }
     view.addSubview(_flutterViewController.view)
   }
 }
