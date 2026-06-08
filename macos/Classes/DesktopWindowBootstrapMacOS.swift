@@ -62,8 +62,11 @@ public enum DesktopWindowBootstrapMacOS {
   }
 
   public static func setOpaqueBackgroundColor(_ backgroundColor: NSColor?) {
+    if colorsMatch(opaqueBackgroundColor, backgroundColor) {
+      return
+    }
     opaqueBackgroundColor = backgroundColor
-    applyCurrentAppearance()
+    applyBackgroundSurfacesOnly()
   }
 
   private static func configureWindowShell(
@@ -74,11 +77,14 @@ public enum DesktopWindowBootstrapMacOS {
     switch visualStyle {
     case .system:
       window.isOpaque = false
-      window.backgroundColor = .clear
     case .opaque:
       window.isOpaque = true
-      window.backgroundColor = backgroundColor ?? .windowBackgroundColor
     }
+    configureWindowBackground(
+      window,
+      visualStyle: visualStyle,
+      backgroundColor: backgroundColor
+    )
     window.titlebarAppearsTransparent = true
     window.titleVisibility = .hidden
     window.styleMask.insert(.fullSizeContentView)
@@ -96,19 +102,17 @@ public enum DesktopWindowBootstrapMacOS {
       if #available(macOS 10.14, *) {
         visualEffectView.material = .fullScreenUI
       }
-      visualEffectView.layer?.backgroundColor = nil
     case .opaque:
       visualEffectView.blendingMode = .withinWindow
       if #available(macOS 10.14, *) {
         visualEffectView.material = .windowBackground
       }
-      if let backgroundColor {
-        visualEffectView.wantsLayer = true
-        visualEffectView.layer?.backgroundColor = backgroundColor.cgColor
-      } else {
-        visualEffectView.layer?.backgroundColor = nil
-      }
     }
+    configureVisualEffectBackground(
+      visualEffectView,
+      visualStyle: visualStyle,
+      backgroundColor: backgroundColor
+    )
   }
 
   private static func configureFlutterBackground(
@@ -121,6 +125,77 @@ public enum DesktopWindowBootstrapMacOS {
       controller.flutterViewController.backgroundColor = .clear
     case .opaque:
       controller.flutterViewController.backgroundColor = backgroundColor ?? .clear
+    }
+  }
+
+  private static func applyBackgroundSurfacesOnly() {
+    guard let window = mainWindow,
+          let controller = window.contentViewController as? DesktopWindowBootstrapViewController
+    else {
+      return
+    }
+
+    let effectiveVisualStyle: DesktopWindowVisualStyle = window.styleMask
+      .contains(.fullScreen)
+      ? .opaque
+      : visualStyle
+    configureWindowBackground(
+      window,
+      visualStyle: effectiveVisualStyle,
+      backgroundColor: opaqueBackgroundColor
+    )
+    configureVisualEffectBackground(
+      controller.visualEffectView,
+      visualStyle: effectiveVisualStyle,
+      backgroundColor: opaqueBackgroundColor
+    )
+    configureFlutterBackground(
+      controller,
+      visualStyle: effectiveVisualStyle,
+      backgroundColor: opaqueBackgroundColor
+    )
+    window.invalidateShadow()
+  }
+
+  private static func configureWindowBackground(
+    _ window: NSWindow,
+    visualStyle: DesktopWindowVisualStyle,
+    backgroundColor: NSColor?
+  ) {
+    switch visualStyle {
+    case .system:
+      window.backgroundColor = .clear
+    case .opaque:
+      window.backgroundColor = backgroundColor ?? .windowBackgroundColor
+    }
+  }
+
+  private static func configureVisualEffectBackground(
+    _ visualEffectView: NSVisualEffectView,
+    visualStyle: DesktopWindowVisualStyle,
+    backgroundColor: NSColor?
+  ) {
+    switch visualStyle {
+    case .system:
+      visualEffectView.layer?.backgroundColor = nil
+    case .opaque:
+      if let backgroundColor {
+        visualEffectView.wantsLayer = true
+        visualEffectView.layer?.backgroundColor = backgroundColor.cgColor
+      } else {
+        visualEffectView.layer?.backgroundColor = nil
+      }
+    }
+  }
+
+  private static func colorsMatch(_ lhs: NSColor?, _ rhs: NSColor?) -> Bool {
+    switch (lhs, rhs) {
+    case (nil, nil):
+      return true
+    case let (lhs?, rhs?):
+      return lhs.isEqual(rhs)
+    default:
+      return false
     }
   }
 
@@ -148,17 +223,6 @@ public enum DesktopWindowBootstrapMacOS {
         applyWindowedAppearance()
       }
     )
-  }
-
-  private static func applyCurrentAppearance() {
-    guard let window = mainWindow else {
-      return
-    }
-    if window.styleMask.contains(.fullScreen) {
-      applyFullscreenAppearance()
-    } else {
-      applyWindowedAppearance()
-    }
   }
 
   private static func applyWindowedAppearance() {
